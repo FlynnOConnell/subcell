@@ -32,6 +32,9 @@ examples = [
     "bokeh>=3.3",
     "h5py>=3.8",
 ]
+mbo = [
+    "mbo-utilities",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
@@ -40,6 +43,9 @@ dev = [
 
 [project.scripts]
 subcell = "subcell.cli:cli"
+
+[project.entry-points."mbo_utilities.pipelines"]
+subcell = "subcell.mbo:SubcellPipelineWidget"
 
 [build-system]
 requires = ["setuptools>=68"]
