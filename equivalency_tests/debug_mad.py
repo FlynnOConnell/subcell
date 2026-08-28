@@ -1,13 +1,18 @@
 """Debug MAD noise difference between Python and MATLAB."""
 
-import math, warnings
+import math
+import warnings
+
 import numpy as np
 import scipy.io as sio
-
-from spine_extraction.io.zarr_store import ExperimentStore
-from spine_extraction.filters.temporal import moving_mean, moving_mad_noise, moving_median_baseline
-
 from _paths import get_dir_scan
+
+from subcell.filters.temporal import (
+    moving_mad_noise,
+    moving_mean,
+    moving_median_baseline,
+)
+from subcell.io.zarr_store import ExperimentStore
 
 data_dir = get_dir_scan()
 
@@ -16,7 +21,9 @@ adata = store.load_alignment_data(1)
 reg_ds = store.load_registered_ds(1)
 n_ch = adata.num_channels
 n_ds_frames = reg_ds.shape[2] // n_ch
-movie_4d = reg_ds.reshape(reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch).transpose(0, 1, 3, 2)
+movie_4d = reg_ds.reshape(
+    reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch
+).transpose(0, 1, 3, 2)
 IMf = movie_4d[:, :, 1, :].copy()
 
 align_hz = adata.align_hz
@@ -44,13 +51,15 @@ with warnings.catch_warnings():
 
 # Load MATLAB std_IM
 mat3 = sio.loadmat(str(data_dir / "matlab_step3_noise.mat"))
-mat_std_frame = mat3['step3_frame_std']
+mat_std_frame = mat3["step3_frame_std"]
 
 # Compare at frame 1000
 py_std_frame = std_py[:, :, 999]
 vb = ~np.isnan(py_std_frame) & ~np.isnan(mat_std_frame)
 ratio = py_std_frame[vb] / mat_std_frame[vb]
-print(f"std_IM ratio (Python/MATLAB): mean={np.mean(ratio):.4f}, median={np.median(ratio):.4f}")
+print(
+    f"std_IM ratio (Python/MATLAB): mean={np.mean(ratio):.4f}, median={np.median(ratio):.4f}"
+)
 
 # Check: maybe the issue is MATLAB movmad vs our implementation
 # MATLAB movmad computes: mean(|x - mean(x)|) over window
@@ -88,16 +97,22 @@ window_valid = window_vals[~np.isnan(window_vals)]
 if len(window_valid) > 0:
     window_mean = np.mean(window_valid)
     matlab_mad = np.mean(np.abs(window_valid - window_mean))
-    our_mad_raw = moving_mad_noise(residual[ir:ir+1, ic:ic+1, :], window=baseline_window, axis=2)
+    our_mad_raw = moving_mad_noise(
+        residual[ir : ir + 1, ic : ic + 1, :], window=baseline_window, axis=2
+    )
     our_val = our_mad_raw[0, 0, 999] * denoise_window
     mat_val = mat_std_frame[ir, ic]
     print(f"  Frame 999, pixel ({ir},{ic}):")
     print(f"    Manual MAD (single window): {matlab_mad:.6f}")
-    print(f"    Manual MAD / MAD_TO_STD * denoiseWindow: {matlab_mad / MAD_TO_STD * denoise_window:.6f}")
+    print(
+        f"    Manual MAD / MAD_TO_STD * denoiseWindow: {matlab_mad / MAD_TO_STD * denoise_window:.6f}"
+    )
     print(f"    Our moving_mad_noise * denoise: {our_val:.6f}")
     print(f"    MATLAB stdIM: {mat_val:.6f}")
     print(f"    Ratio (ours/MATLAB): {our_val / mat_val:.4f}")
-    print(f"    Ratio (manual/MATLAB): {matlab_mad / MAD_TO_STD * denoise_window / mat_val:.4f}")
+    print(
+        f"    Ratio (manual/MATLAB): {matlab_mad / MAD_TO_STD * denoise_window / mat_val:.4f}"
+    )
 
 # The two-pass moving_mean approach computes a DIFFERENT thing:
 # Pass 1: local_mean[t] = mean(x[t-w:t+w])  -- this uses uniform_filter1d
@@ -112,11 +127,19 @@ if len(window_valid) > 0:
 # across the window.
 
 # Let's verify: compute our two-pass result manually
-local_mean_ts = moving_mean(residual[ir:ir+1, ic:ic+1, :], window=baseline_window, axis=2)[0, 0, :]
-abs_dev_ts = np.abs(ts - local_mean_ts)  # deviation from smoothed mean (varies per sample)
-mad_twopass = moving_mean(abs_dev_ts.reshape(1, 1, -1), window=baseline_window, axis=2)[0, 0, 999]
+local_mean_ts = moving_mean(
+    residual[ir : ir + 1, ic : ic + 1, :], window=baseline_window, axis=2
+)[0, 0, :]
+abs_dev_ts = np.abs(
+    ts - local_mean_ts
+)  # deviation from smoothed mean (varies per sample)
+mad_twopass = moving_mean(abs_dev_ts.reshape(1, 1, -1), window=baseline_window, axis=2)[
+    0, 0, 999
+]
 print(f"\n  Two-pass MAD value: {mad_twopass:.6f}")
-print(f"  Two-pass MAD / MAD_TO_STD * denoise: {mad_twopass / MAD_TO_STD * denoise_window:.6f}")
+print(
+    f"  Two-pass MAD / MAD_TO_STD * denoise: {mad_twopass / MAD_TO_STD * denoise_window:.6f}"
+)
 
 # Now compute single-pass MAD (matching MATLAB)
 print(f"\n  Window size for movmad: {filter_w}")

@@ -1,5 +1,5 @@
 [project]
-name = "spine-extraction"
+name = "subcell"
 version = "0.1.0"
 description = "Synaptic signal extraction from two-photon Bergamo imaging data"
 requires-python = ">=3.10"
@@ -8,8 +8,11 @@ dependencies = [
     "numpy>=1.24",
     "torch>=2.0",
     "scipy>=1.10",
+    "pandas>=2.0",
+    "bottleneck>=1.3",
     "tifffile>=2023.1",
-    "zarr>=2.14",
+    "zarr>=3.0",
+    "numcodecs>=0.13",
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "click>=8.0",
@@ -36,7 +39,7 @@ dev = [
 ]
 
 [project.scripts]
-spine-extract = "spine_extraction.cli:cli"
+subcell = "subcell.cli:cli"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -46,5 +49,10 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.ruff]
-line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
+ignore = [
+    # int(round(x)) is deliberate: numpy scalars must be cast before use as indices.
+    "RUF046",
+]

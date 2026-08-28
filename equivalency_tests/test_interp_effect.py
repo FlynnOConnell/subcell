@@ -1,15 +1,16 @@
 """Test effect of interpolation on source count."""
 
 import warnings
+
 import numpy as np
-from scipy.ndimage import binary_dilation, label as ndimage_label
 import scipy.io as sio
-
-from spine_extraction.io.zarr_store import ExperimentStore
-from spine_extraction.config import ExtractionConfig
-from spine_extraction.extraction.source_selection import select_sources
-
 from _paths import get_dir_scan
+from scipy.ndimage import binary_dilation
+from scipy.ndimage import label as ndimage_label
+
+from subcell.config import ExtractionConfig
+from subcell.extraction.source_selection import select_sources
+from subcell.io.zarr_store import ExperimentStore
 
 data_dir = get_dir_scan()
 
@@ -18,20 +19,33 @@ adata = store.load_alignment_data(1)
 reg_ds = store.load_registered_ds(1)
 n_ch = adata.num_channels
 n_ds_frames = reg_ds.shape[2] // n_ch
-movie_4d = reg_ds.reshape(reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch).transpose(0, 1, 3, 2)
+movie_4d = reg_ds.reshape(
+    reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch
+).transpose(0, 1, 3, 2)
 movie_act = movie_4d[:, :, 1, :]
 
 ext_config = ExtractionConfig(
-    microscope="bergamo", sigma_px=1.33, dXY=3, denoise_window_s=0.2,
-    baseline_window_glu_s=4.0, tau_s=0.03, max_synapse_density=0.01,
-    nan_thresh=0.33, activity_channel=2,
+    microscope="bergamo",
+    sigma_px=1.33,
+    dXY=3,
+    denoise_window_s=0.2,
+    baseline_window_glu_s=4.0,
+    tau_s=0.03,
+    max_synapse_density=0.01,
+    nan_thresh=0.33,
+    activity_channel=2,
 )
 
-valid_pix = np.mean(~np.isnan(np.nanmean(movie_4d, axis=3)), axis=2) > (1 - ext_config.nan_thresh)
+valid_pix = np.mean(~np.isnan(np.nanmean(movie_4d, axis=3)), axis=2) > (
+    1 - ext_config.nan_thresh
+)
+
 
 def run_and_report(label, act_img):
     act_stack = act_img[:, :, np.newaxis]
-    sources = select_sources(act_stack, np.array([0]), ext_config, valid_pixel_mask=valid_pix)
+    sources = select_sources(
+        act_stack, np.array([0]), ext_config, valid_pixel_mask=valid_pix
+    )
 
     h, w = act_img.shape
     sigma_radius = int(np.ceil(1.5 * ext_config.sigma_px + 1))
@@ -40,20 +54,27 @@ def run_and_report(label, act_img):
         r, c = int(round(sources.rows[i])), int(round(sources.cols[i]))
         if 0 <= r < h and 0 <= c < w:
             zones[r, c] = True
-    y, x = np.mgrid[-sigma_radius:sigma_radius+1, -sigma_radius:sigma_radius+1]
+    y, x = np.mgrid[-sigma_radius : sigma_radius + 1, -sigma_radius : sigma_radius + 1]
     disk = (x**2 + y**2) <= sigma_radius**2
     zones = binary_dilation(zones, structure=disk)
     labeled, n_problems = ndimage_label(zones)
     sizes = []
     for i in range(1, n_problems + 1):
-        count = sum(1 for j in range(sources.n_sources)
-                    if labeled[int(round(sources.rows[j])), int(round(sources.cols[j]))] == i)
+        count = sum(
+            1
+            for j in range(sources.n_sources)
+            if labeled[int(round(sources.rows[j])), int(round(sources.cols[j]))] == i
+        )
         sizes.append(count)
     sizes.sort(reverse=True)
-    print(f"  {label}: {sources.n_sources} sources, {n_problems} subproblems, max={max(sizes) if sizes else 0}, sizes={sizes}")
+    print(
+        f"  {label}: {sources.n_sources} sources, {n_problems} subproblems, max={max(sizes) if sizes else 0}, sizes={sizes}"
+    )
+
 
 # 1. Current Python (with interpolation)
-from spine_extraction.extraction.localize import localize_sources
+from subcell.extraction.localize import localize_sources
+
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", RuntimeWarning)
     py_act, py_peaks = localize_sources(movie_act, ext_config, adata.align_hz)
@@ -62,14 +83,26 @@ run_and_report("with_interp", py_act)
 
 # 2. Python without interpolation (matching MATLAB)
 # Monkey-patch to skip interpolation
-import spine_extraction.extraction.localize as loc_mod
+import subcell.extraction.localize as loc_mod
+
 _orig = loc_mod.localize_sources
 
 import math
-from spine_extraction.filters.temporal import exponential_matched_filter, moving_median_baseline, moving_mean, moving_mad_noise
-from spine_extraction.filters.spatial import difference_of_gaussians, nanmedfilt2
-from spine_extraction.filters.morphology import spatiotemporal_nms, local_maxima_3x3, apply_density_threshold
-from spine_extraction.extraction.localize import PeakSet
+
+from subcell.extraction.localize import PeakSet
+from subcell.filters.morphology import (
+    apply_density_threshold,
+    local_maxima_3x3,
+    spatiotemporal_nms,
+)
+from subcell.filters.spatial import difference_of_gaussians, nanmedfilt2
+from subcell.filters.temporal import (
+    exponential_matched_filter,
+    moving_mad_noise,
+    moving_mean,
+    moving_median_baseline,
+)
+
 
 def localize_no_interp(movie, config, align_hz, variance_image=None):
     tau = config.tau_s * align_hz
@@ -111,11 +144,21 @@ def localize_no_interp(movie, config, align_hz, variance_image=None):
     activity_image[~valid] = np.nan
     peak_mask = local_maxima_3x3(activity_image)
     rows, cols, vals = apply_density_threshold(
-        activity_image, peak_mask, config.max_synapse_density,
-        n_time_points=n_time, align_hz=align_hz, valid_mask=valid,
+        activity_image,
+        peak_mask,
+        config.max_synapse_density,
+        n_time_points=n_time,
+        align_hz=align_hz,
+        valid_mask=valid,
     )
-    peaks = PeakSet(row=rows.astype(float), col=cols.astype(float), val=vals, peak_image=activity_image)
+    peaks = PeakSet(
+        row=rows.astype(float),
+        col=cols.astype(float),
+        val=vals,
+        peak_image=activity_image,
+    )
     return activity_image, peaks
+
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", RuntimeWarning)
@@ -125,8 +168,8 @@ run_and_report("no_interp", py_act_ni)
 
 # 3. MATLAB activity image
 mat = sio.loadmat(str(data_dir / "matlab_activityImage.mat"))
-matlab_act = mat['activityImage']
-print(f"MATLAB: {len(mat['peaks']['row'][0,0].flatten())} localized")
+matlab_act = mat["activityImage"]
+print(f"MATLAB: {len(mat['peaks']['row'][0, 0].flatten())} localized")
 run_and_report("matlab_act", matlab_act)
 
 # Compare activity images

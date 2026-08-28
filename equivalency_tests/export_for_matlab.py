@@ -2,9 +2,9 @@
 
 import numpy as np
 import scipy.io as sio
-from spine_extraction.io.zarr_store import ExperimentStore
-
 from _paths import get_dir_scan
+
+from subcell.io.zarr_store import ExperimentStore
 
 zarr_path = get_dir_scan() / "registered.zarr"
 
@@ -29,10 +29,14 @@ print(f"num_channels: {adata.num_channels}")
 print(f"NaN fraction: {np.mean(np.isnan(movie_act)):.3f}")
 
 out_path = zarr_path.parent / "registered_ds_act.mat"
-sio.savemat(str(out_path), {
-    'movie_act': movie_act.astype(np.float32),
-    'align_hz': float(adata.align_hz),
-    'frame_time': float(adata.frame_time),
-    'num_channels': int(adata.num_channels),
-}, do_compression=True)
+sio.savemat(
+    str(out_path),
+    {
+        "movie_act": movie_act.astype(np.float32),
+        "align_hz": float(adata.align_hz),
+        "frame_time": float(adata.frame_time),
+        "num_channels": int(adata.num_channels),
+    },
+    do_compression=True,
+)
 print(f"Saved to {out_path} ({out_path.stat().st_size / 1e6:.1f} MB)")

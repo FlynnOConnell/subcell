@@ -1,18 +1,25 @@
 """Test true per-window MAD using numpy sliding_window_view, verify it fixes correlation."""
 
-import math, warnings, time
+import math
+import time
+import warnings
+
 import numpy as np
 import scipy.io as sio
-
-from spine_extraction.io.zarr_store import ExperimentStore
-from spine_extraction.filters.temporal import (
-    exponential_matched_filter, moving_median_baseline,
-    moving_mean,
-)
-from spine_extraction.filters.spatial import difference_of_gaussians, nanmedfilt2
-from spine_extraction.filters.morphology import spatiotemporal_nms, local_maxima_3x3, apply_density_threshold
-
 from _paths import get_dir_scan
+
+from subcell.filters.morphology import (
+    apply_density_threshold,
+    local_maxima_3x3,
+    spatiotemporal_nms,
+)
+from subcell.filters.spatial import difference_of_gaussians, nanmedfilt2
+from subcell.filters.temporal import (
+    exponential_matched_filter,
+    moving_mean,
+    moving_median_baseline,
+)
+from subcell.io.zarr_store import ExperimentStore
 
 data_dir = get_dir_scan()
 
@@ -30,7 +37,7 @@ def true_movmad_chunked(data_3d, window, axis=2):
     if axis != 2:
         data_3d = np.moveaxis(data_3d, axis, 2)
 
-    rows, cols, n_time = data_3d.shape
+    _, _, n_time = data_3d.shape
     half_w = window // 2
     filter_w = 2 * half_w + 1
     result = np.full_like(data_3d, np.nan)
@@ -54,7 +61,9 @@ def true_movmad_chunked(data_3d, window, axis=2):
         if i > 0 and i % 500 == 0:
             elapsed = time.time() - t0
             eta = elapsed / i * (n_pixels - i)
-            print(f"  {i}/{n_pixels} pixels, {elapsed:.0f}s elapsed, ~{eta:.0f}s remaining")
+            print(
+                f"  {i}/{n_pixels} pixels, {elapsed:.0f}s elapsed, ~{eta:.0f}s remaining"
+            )
 
     if axis != 2:
         result = np.moveaxis(result, 2, axis)
@@ -67,7 +76,9 @@ adata = store.load_alignment_data(1)
 reg_ds = store.load_registered_ds(1)
 n_ch = adata.num_channels
 n_ds_frames = reg_ds.shape[2] // n_ch
-movie_4d = reg_ds.reshape(reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch).transpose(0, 1, 3, 2)
+movie_4d = reg_ds.reshape(
+    reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch
+).transpose(0, 1, 3, 2)
 IMf = movie_4d[:, :, 1, :].copy()
 
 align_hz = adata.align_hz
@@ -93,8 +104,10 @@ residual = IMfden - IMb
 
 print("Computing true per-window MAD (this will take a while)...")
 t0 = time.time()
-std_true = true_movmad_chunked(residual, window=baseline_window) / MAD_TO_STD * denoise_window
-print(f"Done in {time.time()-t0:.0f}s")
+std_true = (
+    true_movmad_chunked(residual, window=baseline_window) / MAD_TO_STD * denoise_window
+)
+print(f"Done in {time.time() - t0:.0f}s")
 
 del IMfden, IMb, residual
 
@@ -126,37 +139,45 @@ activity_image[~valid] = np.nan
 
 # Compare with MATLAB
 mat6 = sio.loadmat(str(data_dir / "matlab_step6_activity.mat"))
-mat_raw = mat6['step6_activity_raw']
-mat_final = mat6['step6_activity_final']
+mat_raw = mat6["step6_activity_raw"]
+mat_final = mat6["step6_activity_final"]
 
-print(f"\n=== Results with true per-window MAD ===")
+print("\n=== Results with true per-window MAD ===")
 vb = ~np.isnan(activity_image) & ~np.isnan(mat_final)
 corr = np.corrcoef(activity_image[vb], mat_final[vb])[0, 1]
 print(f"Activity (final) correlation: {corr:.4f}")
 
 from scipy.stats import spearmanr
+
 rho, _ = spearmanr(activity_image[vb], mat_final[vb])
 print(f"Spearman rank correlation: {rho:.4f}")
 
-print(f"Python range: [{np.nanmin(activity_image):.6f}, {np.nanmax(activity_image):.6f}]")
+print(
+    f"Python range: [{np.nanmin(activity_image):.6f}, {np.nanmax(activity_image):.6f}]"
+)
 print(f"MATLAB range: [{np.nanmin(mat_final):.6f}, {np.nanmax(mat_final):.6f}]")
 
 # Peak detection
 peak_mask = local_maxima_3x3(activity_image)
 rows, cols, vals = apply_density_threshold(
-    activity_image, peak_mask, max_density=0.01,
-    n_time_points=n_time, align_hz=align_hz, valid_mask=valid,
+    activity_image,
+    peak_mask,
+    max_density=0.01,
+    n_time_points=n_time,
+    align_hz=align_hz,
+    valid_mask=valid,
 )
 
 mat_act = sio.loadmat(str(data_dir / "matlab_activityImage.mat"))
-matlab_peaks_r = mat_act['peaks']['row'][0, 0].flatten()
-matlab_peaks_c = mat_act['peaks']['col'][0, 0].flatten()
+matlab_peaks_r = mat_act["peaks"]["row"][0, 0].flatten()
+matlab_peaks_c = mat_act["peaks"]["col"][0, 0].flatten()
 
 print(f"\nPython peaks: {len(rows)}, MATLAB peaks: {len(matlab_peaks_r)}")
 
 # Match peaks
 if len(rows) > 0 and len(matlab_peaks_r) > 0:
     from scipy.spatial.distance import cdist
+
     py_coords = np.column_stack([rows.astype(float), cols.astype(float)])
     mat_coords = np.column_stack([matlab_peaks_r, matlab_peaks_c])
     dists = cdist(py_coords, mat_coords)
@@ -164,4 +185,6 @@ if len(rows) > 0 and len(matlab_peaks_r) > 0:
     for thr in [1.0, 2.0, 3.0, 5.0]:
         py_m = np.sum(np.min(dists, axis=1) <= thr)
         mat_m = np.sum(np.min(dists, axis=0) <= thr)
-        print(f"  Within {thr:.0f}px: {py_m}/{len(rows)} Python, {mat_m}/{len(matlab_peaks_r)} MATLAB")
+        print(
+            f"  Within {thr:.0f}px: {py_m}/{len(rows)} Python, {mat_m}/{len(matlab_peaks_r)} MATLAB"
+        )

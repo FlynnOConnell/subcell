@@ -2,7 +2,7 @@
 
 This document provides a comprehensive side-by-side comparison of the Bergamo
 two-photon imaging analysis pipeline between the original MATLAB implementation
-and its Python port (`spine_extraction`). The MATLAB workflow consists of two
+and its Python port (`subcell`). The MATLAB workflow consists of two
 main scripts called sequentially:
 
 1. **`stripRegistrationBergamo.m`** — Motion correction (registration)
@@ -68,11 +68,11 @@ built-ins (`smoothdata`, `movmad`, `imgaussfilt`, `ordfilt2`,
 
 ### Python
 
-The Python port (`spine_extraction`) decomposes the pipeline into modular
+The Python port (`subcell`) decomposes the pipeline into modular
 components:
 
 ```
-spine_extraction/
+subcell/
   registration/
     bergamo.py           # Ports stripRegistrationBergamo.m
     dft_registration.py  # Ports dftregistration_clipped.m

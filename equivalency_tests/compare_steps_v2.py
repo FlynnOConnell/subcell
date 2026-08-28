@@ -1,18 +1,21 @@
 """Compare Python vs MATLAB at each step — multi-frame comparison."""
 
-import math, warnings
+import math
+import warnings
+
 import numpy as np
 import scipy.io as sio
-
-from spine_extraction.io.zarr_store import ExperimentStore
-from spine_extraction.filters.temporal import (
-    exponential_matched_filter, moving_median_baseline,
-    moving_mean, moving_mad_noise,
-)
-from spine_extraction.filters.spatial import difference_of_gaussians
-from spine_extraction.filters.morphology import spatiotemporal_nms
-
 from _paths import get_dir_scan
+
+from subcell.filters.morphology import spatiotemporal_nms
+from subcell.filters.spatial import difference_of_gaussians
+from subcell.filters.temporal import (
+    exponential_matched_filter,
+    moving_mad_noise,
+    moving_mean,
+    moving_median_baseline,
+)
+from subcell.io.zarr_store import ExperimentStore
 
 data_dir = get_dir_scan()
 
@@ -22,7 +25,9 @@ adata = store.load_alignment_data(1)
 reg_ds = store.load_registered_ds(1)
 n_ch = adata.num_channels
 n_ds_frames = reg_ds.shape[2] // n_ch
-movie_4d = reg_ds.reshape(reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch).transpose(0, 1, 3, 2)
+movie_4d = reg_ds.reshape(
+    reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch
+).transpose(0, 1, 3, 2)
 IMf = movie_4d[:, :, 1, :].copy()
 
 align_hz = adata.align_hz
@@ -41,6 +46,7 @@ nan_mask = np.isnan(IMf)
 fidxs = [99, 499, 999, 4999, 9999]
 fidx_labels = [100, 500, 1000, 5000, 10000]
 
+
 def corr_frames(py_frames, mat_frames, step_name):
     """Compare multiple frames."""
     for i, fl in enumerate(fidx_labels):
@@ -53,8 +59,11 @@ def corr_frames(py_frames, mat_frames, step_name):
         c = np.corrcoef(py[vb], ma[vb])[0, 1]
         mae = np.mean(np.abs(py[vb] - ma[vb]))
         scale = np.std(ma[vb])
-        nrmse = np.sqrt(np.mean((py[vb] - ma[vb])**2)) / scale if scale > 0 else 0
-        print(f"  {step_name} frame {fl}: corr={c:.6f}, NRMSE={nrmse:.4f}, MAE={mae:.2e}")
+        nrmse = np.sqrt(np.mean((py[vb] - ma[vb]) ** 2)) / scale if scale > 0 else 0
+        print(
+            f"  {step_name} frame {fl}: corr={c:.6f}, NRMSE={nrmse:.4f}, MAE={mae:.2e}"
+        )
+
 
 # ============ Step 1: Smoothing ============
 print("=== Step 1: Moving mean ===")
@@ -63,7 +72,7 @@ with warnings.catch_warnings():
     IMfden = moving_mean(IMf, window=denoise_window, axis=2)
 
 mat1b = sio.loadmat(str(data_dir / "matlab_step1b_frames.mat"))
-corr_frames(IMfden[:, :, fidxs], mat1b['step1_frames_smooth'], "smooth")
+corr_frames(IMfden[:, :, fidxs], mat1b["step1_frames_smooth"], "smooth")
 
 # ============ Step 2: Baseline ============
 print("\n=== Step 2: Moving median baseline ===")
@@ -73,8 +82,8 @@ with warnings.catch_warnings():
 IMf_hp = IMf - IMb
 
 mat2 = sio.loadmat(str(data_dir / "matlab_step2_baseline.mat"))
-corr_frames(IMb[:, :, fidxs], mat2['step2_frames_baseline'], "baseline")
-corr_frames(IMf_hp[:, :, fidxs], mat2['step2_frames_hp'], "highpass")
+corr_frames(IMb[:, :, fidxs], mat2["step2_frames_baseline"], "baseline")
+corr_frames(IMf_hp[:, :, fidxs], mat2["step2_frames_hp"], "highpass")
 
 # ============ Step 3: MAD noise + Z-score ============
 print("\n=== Step 3: MAD noise + Z-score ===")
@@ -89,11 +98,11 @@ IMf_z[non_finite_z] = np.nan
 nan_mask = nan_mask | non_finite_z
 
 mat3 = sio.loadmat(str(data_dir / "matlab_step3_noise.mat"))
-corr_frames(IMf_z[:, :, fidxs], mat3['step3_frames_z'], "zscore")
+corr_frames(IMf_z[:, :, fidxs], mat3["step3_frames_z"], "zscore")
 
 # Check std_IM at single frame
 py_std_frame = std_IM[:, :, 999]
-mat_std_frame = mat3['step3_frame_std']
+mat_std_frame = mat3["step3_frame_std"]
 vb = ~np.isnan(py_std_frame) & ~np.isnan(mat_std_frame)
 c = np.corrcoef(py_std_frame[vb], mat_std_frame[vb])[0, 1]
 print(f"  std_IM frame 1000: corr={c:.6f}")
@@ -110,7 +119,7 @@ IMf_mf = exponential_matched_filter(IMf_z, tau)
 IMf_mf[nan_mask] = np.nan
 
 mat4 = sio.loadmat(str(data_dir / "matlab_step4_matchedfilter.mat"))
-corr_frames(IMf_mf[:, :, fidxs], mat4['step4_frames'], "mf")
+corr_frames(IMf_mf[:, :, fidxs], mat4["step4_frames"], "mf")
 del IMf_z
 
 # ============ Step 5: DoG ============
@@ -118,7 +127,7 @@ print("\n=== Step 5: Difference of Gaussians ===")
 IMf_dog = difference_of_gaussians(IMf_mf, sigma, nan_mask=nan_mask)
 
 mat5 = sio.loadmat(str(data_dir / "matlab_step5_dog.mat"))
-corr_frames(IMf_dog[:, :, fidxs], mat5['step5_frames'], "dog")
+corr_frames(IMf_dog[:, :, fidxs], mat5["step5_frames"], "dog")
 del IMf_mf
 
 # ============ Step 6: NMS + activity image ============
@@ -127,17 +136,18 @@ mat6 = sio.loadmat(str(data_dir / "matlab_step6_activity.mat"))
 
 activity_image, _ = spatiotemporal_nms(IMf_dog, tau, nan_mask=nan_mask)
 
-vb = ~np.isnan(activity_image) & ~np.isnan(mat6['step6_activity_raw'])
-c = np.corrcoef(activity_image[vb], mat6['step6_activity_raw'][vb])[0, 1]
+vb = ~np.isnan(activity_image) & ~np.isnan(mat6["step6_activity_raw"])
+c = np.corrcoef(activity_image[vb], mat6["step6_activity_raw"][vb])[0, 1]
 print(f"  activity_raw: corr={c:.6f}")
 
 # Post-process
 activity_image[~valid] = np.nan
-from spine_extraction.filters.spatial import nanmedfilt2
+from subcell.filters.spatial import nanmedfilt2
+
 med_filt = nanmedfilt2(activity_image, 5)
 activity_image = activity_image - med_filt
 activity_image[~valid] = np.nan
 
-vb = ~np.isnan(activity_image) & ~np.isnan(mat6['step6_activity_final'])
-c = np.corrcoef(activity_image[vb], mat6['step6_activity_final'][vb])[0, 1]
+vb = ~np.isnan(activity_image) & ~np.isnan(mat6["step6_activity_final"])
+c = np.corrcoef(activity_image[vb], mat6["step6_activity_final"][vb])[0, 1]
 print(f"  activity_final: corr={c:.6f}")

@@ -1,7 +1,7 @@
 function dir_scan = scan_dir(scan)
 %SCAN_DIR Directory of the reference scan used by the equivalency scripts.
 %
-%   Reads the session directory from the SPINE_TEST_DATA environment
+%   Reads the session directory from the SUBCELL_TEST_DATA environment
 %   variable and appends the scan folder name.
 %
 %   dir_scan = SCAN_DIR() uses the default reference scan.
@@ -11,9 +11,9 @@ if nargin < 1
     scan = 'test_scan_00001_20240924_110500';
 end
 
-dir_session = getenv('SPINE_TEST_DATA');
+dir_session = getenv('SUBCELL_TEST_DATA');
 if isempty(dir_session)
-    error(['SPINE_TEST_DATA is not set. Point it at the session directory ' ...
+    error(['SUBCELL_TEST_DATA is not set. Point it at the session directory ' ...
            'holding the scan folders, e.g. ''D:\iGluSnFR test data\750098\2024-09-24''.']);
 end
 

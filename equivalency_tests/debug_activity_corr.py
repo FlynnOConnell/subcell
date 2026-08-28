@@ -1,19 +1,22 @@
 """Investigate why activity image correlation is low despite good upstream match."""
 
-import math, warnings
+import math
+import warnings
+
 import numpy as np
 import scipy.io as sio
+from _paths import get_dir_scan
 from scipy.ndimage import maximum_filter
 
-from spine_extraction.io.zarr_store import ExperimentStore
-from spine_extraction.filters.temporal import (
-    exponential_matched_filter, moving_median_baseline,
-    moving_mean, moving_mad_noise,
+from subcell.filters.morphology import spatiotemporal_nms
+from subcell.filters.spatial import difference_of_gaussians, nanmedfilt2
+from subcell.filters.temporal import (
+    exponential_matched_filter,
+    moving_mad_noise,
+    moving_mean,
+    moving_median_baseline,
 )
-from spine_extraction.filters.spatial import difference_of_gaussians, nanmedfilt2
-from spine_extraction.filters.morphology import spatiotemporal_nms
-
-from _paths import get_dir_scan
+from subcell.io.zarr_store import ExperimentStore
 
 data_dir = get_dir_scan()
 
@@ -23,7 +26,9 @@ adata = store.load_alignment_data(1)
 reg_ds = store.load_registered_ds(1)
 n_ch = adata.num_channels
 n_ds_frames = reg_ds.shape[2] // n_ch
-movie_4d = reg_ds.reshape(reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch).transpose(0, 1, 3, 2)
+movie_4d = reg_ds.reshape(
+    reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch
+).transpose(0, 1, 3, 2)
 IMf = movie_4d[:, :, 1, :].copy()
 
 align_hz = adata.align_hz
@@ -62,7 +67,7 @@ del IMf_mf
 
 # Load MATLAB activity
 mat6 = sio.loadmat(str(data_dir / "matlab_step6_activity.mat"))
-mat_raw = mat6['step6_activity_raw']
+mat_raw = mat6["step6_activity_raw"]
 
 # Run NMS
 py_raw, _ = spatiotemporal_nms(IMf_dog, tau, nan_mask=nan_mask)
@@ -80,12 +85,16 @@ vb_brd = border & ~np.isnan(py_raw) & ~np.isnan(mat_raw)
 
 if np.sum(vb_int) > 2:
     c = np.corrcoef(py_raw[vb_int], mat_raw[vb_int])[0, 1]
-    nrmse = np.sqrt(np.mean((py_raw[vb_int] - mat_raw[vb_int])**2)) / np.std(mat_raw[vb_int])
+    nrmse = np.sqrt(np.mean((py_raw[vb_int] - mat_raw[vb_int]) ** 2)) / np.std(
+        mat_raw[vb_int]
+    )
     print(f"\nInterior pixels ({np.sum(vb_int)}): corr={c:.4f}, NRMSE={nrmse:.4f}")
     ratio = py_raw[vb_int] / np.maximum(mat_raw[vb_int], 1e-15)
     finite_r = ratio[np.isfinite(ratio) & (mat_raw[vb_int] > 1e-10)]
     if len(finite_r) > 0:
-        print(f"  Ratio: mean={np.mean(finite_r):.4f}, median={np.median(finite_r):.4f}, std={np.std(finite_r):.4f}")
+        print(
+            f"  Ratio: mean={np.mean(finite_r):.4f}, median={np.median(finite_r):.4f}, std={np.std(finite_r):.4f}"
+        )
 
 if np.sum(vb_brd) > 2:
     c = np.corrcoef(py_raw[vb_brd], mat_raw[vb_brd])[0, 1]
@@ -99,14 +108,18 @@ print(f"\nAll valid pixels: {np.sum(vb)}")
 for p in [50, 75, 90, 95, 99]:
     pp = np.percentile(py_raw[vb], p)
     mp = np.percentile(mat_raw[vb], p)
-    print(f"  p{p}: Python={pp:.6f}, MATLAB={mp:.6f}, ratio={pp/mp:.4f}" if mp != 0 else f"  p{p}: Python={pp:.6f}, MATLAB={mp:.6f}")
+    print(
+        f"  p{p}: Python={pp:.6f}, MATLAB={mp:.6f}, ratio={pp / mp:.4f}"
+        if mp != 0
+        else f"  p{p}: Python={pp:.6f}, MATLAB={mp:.6f}"
+    )
 
 # How many peaks are found at each frame?
 rows, cols, n_frames = IMf_dog.shape
 skip_end = int(np.ceil(1.5 * tau))
 end_frame = n_frames - skip_end
 
-print(f"\n=== Per-frame peak analysis ===")
+print("\n=== Per-frame peak analysis ===")
 py_peaks_per_frame = []
 for fr in range(1, min(end_frame, 100)):  # first 100 frames
     cur = IMf_dog[:, :, fr]
@@ -114,7 +127,7 @@ for fr in range(1, min(end_frame, 100)):  # first 100 frames
     nxt = IMf_dog[:, :, fr + 1]
 
     spatial_max = maximum_filter(cur, size=3)
-    is_spatial = (cur == spatial_max)
+    is_spatial = cur == spatial_max
     nan_cur = np.isnan(cur)
     if np.any(nan_cur):
         nan_neighbor = maximum_filter(nan_cur.astype(np.float32), size=3) > 0
@@ -122,8 +135,10 @@ for fr in range(1, min(end_frame, 100)):  # first 100 frames
     is_peak = is_spatial & (cur > prev) & (cur >= nxt)
     py_peaks_per_frame.append(np.sum(is_peak))
 
-print(f"Peaks per frame (first 100): mean={np.mean(py_peaks_per_frame):.1f}, "
-      f"min={np.min(py_peaks_per_frame)}, max={np.max(py_peaks_per_frame)}")
+print(
+    f"Peaks per frame (first 100): mean={np.mean(py_peaks_per_frame):.1f}, "
+    f"min={np.min(py_peaks_per_frame)}, max={np.max(py_peaks_per_frame)}"
+)
 
 # Post-process and compare
 py_final = py_raw.copy()
@@ -132,11 +147,11 @@ med_filt = nanmedfilt2(py_final, 5)
 py_final = py_final - med_filt
 py_final[~valid] = np.nan
 
-mat_final = mat6['step6_activity_final']
+mat_final = mat6["step6_activity_final"]
 
 vb_f = ~np.isnan(py_final) & ~np.isnan(mat_final)
 c = np.corrcoef(py_final[vb_f], mat_final[vb_f])[0, 1]
-print(f"\n=== Post-processed activity ===")
+print("\n=== Post-processed activity ===")
 print(f"Correlation: {c:.4f}")
 
 # Interior only
@@ -148,6 +163,7 @@ if np.sum(vb_int_f) > 2:
 # Check if the low correlation is driven by different spatial patterns or just scale
 # Try rank correlation
 from scipy.stats import spearmanr
+
 rho, _ = spearmanr(py_final[vb_f], mat_final[vb_f])
 print(f"Spearman rank correlation: {rho:.4f}")
 

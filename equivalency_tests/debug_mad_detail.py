@@ -1,16 +1,17 @@
 """Compare Python vs MATLAB MAD in detail, including a true per-window MAD."""
 
-import math, warnings
+import math
+import warnings
+
 import numpy as np
 import scipy.io as sio
-import pandas as pd
-
-from spine_extraction.io.zarr_store import ExperimentStore
-from spine_extraction.filters.temporal import (
-    moving_median_baseline, moving_mean,
-)
-
 from _paths import get_dir_scan
+
+from subcell.filters.temporal import (
+    moving_mean,
+    moving_median_baseline,
+)
+from subcell.io.zarr_store import ExperimentStore
 
 data_dir = get_dir_scan()
 
@@ -19,7 +20,9 @@ adata = store.load_alignment_data(1)
 reg_ds = store.load_registered_ds(1)
 n_ch = adata.num_channels
 n_ds_frames = reg_ds.shape[2] // n_ch
-movie_4d = reg_ds.reshape(reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch).transpose(0, 1, 3, 2)
+movie_4d = reg_ds.reshape(
+    reg_ds.shape[0], reg_ds.shape[1], n_ds_frames, n_ch
+).transpose(0, 1, 3, 2)
 IMf = movie_4d[:, :, 1, :].copy()
 
 align_hz = adata.align_hz
@@ -39,10 +42,13 @@ residual = IMfden - IMb
 
 # Load MATLAB raw movmad
 mat = sio.loadmat(str(data_dir / "matlab_raw_movmad.mat"))
-mat_movmad = mat['raw_movmad_frame']  # frame 1000, raw movmad (before /0.674 * denoiseWindow)
+mat_movmad = mat[
+    "raw_movmad_frame"
+]  # frame 1000, raw movmad (before /0.674 * denoiseWindow)
 
 # Python two-pass MAD (current implementation)
-from spine_extraction.filters.temporal import moving_mad_noise
+from subcell.filters.temporal import moving_mad_noise
+
 MAD_TO_STD = 0.6741891400433162
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", RuntimeWarning)
@@ -75,14 +81,18 @@ for r, c in test_pixels:
     else:
         true_mad = np.nan
 
-    mat_val = mat_movmad[r, c] if r < mat_movmad.shape[0] and c < mat_movmad.shape[1] else np.nan
+    mat_val = (
+        mat_movmad[r, c]
+        if r < mat_movmad.shape[0] and c < mat_movmad.shape[1]
+        else np.nan
+    )
 
     print(f"Pixel ({r},{c}):")
     print(f"  MATLAB raw movmad: {mat_val:.6f}")
-    print(f"  Python two-pass MAD: {py_mad_raw[r,c]:.6f}")
+    print(f"  Python two-pass MAD: {py_mad_raw[r, c]:.6f}")
     print(f"  Python true per-window MAD: {true_mad:.6f}")
-    print(f"  Ratio py_twopass/matlab: {py_mad_raw[r,c]/mat_val:.4f}")
-    print(f"  Ratio true/matlab: {true_mad/mat_val:.4f}")
+    print(f"  Ratio py_twopass/matlab: {py_mad_raw[r, c] / mat_val:.4f}")
+    print(f"  Ratio true/matlab: {true_mad / mat_val:.4f}")
     print()
 
 # Now compute true per-window MAD for ALL pixels at frame 999

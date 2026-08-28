@@ -7,6 +7,7 @@ peak counts and subproblem counts for each.
 Usage:
     python examples/test_localize_changes.py
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,7 +16,8 @@ import time
 import warnings
 
 import numpy as np
-from scipy.ndimage import binary_dilation, label as ndimage_label
+from scipy.ndimage import binary_dilation
+from scipy.ndimage import label as ndimage_label
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,6 +28,7 @@ logger = logging.getLogger("test_localize")
 
 # ── Data path ──────────────────────────────────────────────────────────
 import sys
+
 _scan = sys.argv[1] if len(sys.argv) > 1 else "scan_00001_20240924_110500"
 from _paths import get_dir_scan
 
@@ -33,8 +36,8 @@ data_dir = get_dir_scan(_scan)
 zarr_path = data_dir / "registered.zarr"
 
 # ── Load data once ─────────────────────────────────────────────────────
-from spine_extraction.io.zarr_store import ExperimentStore
-from spine_extraction.config import ExtractionConfig
+from subcell.config import ExtractionConfig
+from subcell.io.zarr_store import ExperimentStore
 
 store = ExperimentStore(zarr_path)
 adata = store.load_alignment_data(1)
@@ -48,11 +51,16 @@ movie_4d = reg_ds.reshape(
 
 ext_config = ExtractionConfig(
     microscope="bergamo",
-    sigma_px=1.33, nmf_iter=2, dXY=3,
-    denoise_window_s=0.2, baseline_window_glu_s=4.0,
-    tau_s=0.03, max_synapse_density=0.01,
-    motion_thresh=2.5, nan_thresh=0.33,
-    activity_channel=2, smooth_baseline=False,
+    sigma_px=1.33,
+    nmf_iter=2,
+    dXY=3,
+    denoise_window_s=0.2,
+    baseline_window_glu_s=4.0,
+    tau_s=0.03,
+    max_synapse_density=0.01,
+    motion_thresh=2.5,
+    nan_thresh=0.33,
+    activity_channel=2,
 )
 
 act_ch = ext_config.activity_channel - 1
@@ -73,7 +81,7 @@ def count_subproblems(peaks_row, peaks_col, h, w, sigma_px):
         ri, ci = int(round(r)), int(round(c))
         if 0 <= ri < h and 0 <= ci < w:
             zones[ri, ci] = True
-    y, x = np.mgrid[-sigma_radius:sigma_radius+1, -sigma_radius:sigma_radius+1]
+    y, x = np.mgrid[-sigma_radius : sigma_radius + 1, -sigma_radius : sigma_radius + 1]
     disk = (x**2 + y**2) <= sigma_radius**2
     zones = binary_dilation(zones, structure=disk)
     labeled, n_problems = ndimage_label(zones)
@@ -83,8 +91,10 @@ def count_subproblems(peaks_row, peaks_col, h, w, sigma_px):
     for p in range(1, n_problems + 1):
         mask = labeled == p
         count = sum(
-            1 for r, c in zip(peaks_row, peaks_col)
-            if 0 <= int(round(r)) < h and 0 <= int(round(c)) < w
+            1
+            for r, c in zip(peaks_row, peaks_col)
+            if 0 <= int(round(r)) < h
+            and 0 <= int(round(c)) < w
             and mask[int(round(r)), int(round(c))]
         )
         sources_per.append(count)
@@ -92,22 +102,24 @@ def count_subproblems(peaks_row, peaks_col, h, w, sigma_px):
 
 
 # ── Localization variants ──────────────────────────────────────────────
-from spine_extraction.filters.temporal import (
-    exponential_matched_filter,
-    moving_median_baseline,
-    moving_mean,
-    moving_mad_noise,
-)
-from spine_extraction.filters.spatial import difference_of_gaussians, nanmedfilt2
-from spine_extraction.filters.morphology import (
-    spatiotemporal_nms,
-    local_maxima_3x3,
+from subcell.filters.morphology import (
     apply_density_threshold,
+    local_maxima_3x3,
+    spatiotemporal_nms,
+)
+from subcell.filters.spatial import difference_of_gaussians, nanmedfilt2
+from subcell.filters.temporal import (
+    exponential_matched_filter,
+    moving_mad_noise,
+    moving_mean,
+    moving_median_baseline,
 )
 
 
 def run_localize(
-    movie, config, align_hz,
+    movie,
+    config,
+    align_hz,
     *,
     do_interp=True,
     do_denoise=True,
@@ -156,7 +168,11 @@ def run_localize(
         IMf = flat.reshape(shape)
 
     # Change 2: denoise before baseline
-    if do_denoise in ("smooth_baseline", "smooth_baseline_sqrt", "smooth_baseline_noscale"):
+    if do_denoise in (
+        "smooth_baseline",
+        "smooth_baseline_sqrt",
+        "smooth_baseline_noscale",
+    ):
         # MATLAB-match: baseline from smoothed copy, subtract from raw,
         # MAD from smoothed residual scaled by denoiseWindow
         IMfden = moving_mean(IMf, window=denoise_window, axis=2)
@@ -205,9 +221,12 @@ def run_localize(
 
     peak_mask = local_maxima_3x3(activity_image)
     rows, cols, vals = apply_density_threshold(
-        activity_image, peak_mask,
+        activity_image,
+        peak_mask,
         config.max_synapse_density,
-        n_time_points=n_time, align_hz=align_hz, valid_mask=valid,
+        n_time_points=n_time,
+        align_hz=align_hz,
+        valid_mask=valid,
     )
 
     return rows, cols, vals
@@ -218,53 +237,150 @@ h, w = movie_act.shape[:2]
 
 variants = [
     # (label, kwargs)
-    ("CURRENT (baseline)",
-     dict(do_interp=True, do_denoise=True, do_median_fill=True, do_nms_normalize=False)),
-
-    ("STASH (all changes)",
-     dict(do_interp=False, do_denoise=False, do_median_fill=False, do_nms_normalize=False)),
-
-    ("Change 1 only: remove interpolation",
-     dict(do_interp=False, do_denoise=True, do_median_fill=True, do_nms_normalize=False)),
-
-    ("Change 2 only: remove denoise",
-     dict(do_interp=True, do_denoise=False, do_median_fill=True, do_nms_normalize=False)),
-
-    ("Change 3 only: add NMS normalization",
-     dict(do_interp=True, do_denoise=True, do_median_fill=True, do_nms_normalize=True)),
-
-    ("Change 4 only: remove median fill",
-     dict(do_interp=True, do_denoise=True, do_median_fill=False, do_nms_normalize=False)),
-
-    ("Changes 1+2: remove interp + denoise",
-     dict(do_interp=False, do_denoise=False, do_median_fill=True, do_nms_normalize=False)),
-
-    ("Changes 1+2+4: remove interp + denoise + median fill (full stash minus NMS)",
-     dict(do_interp=False, do_denoise=False, do_median_fill=False, do_nms_normalize=False)),
-
-    ("MATLAB-MATCH: interp + smooth_baseline + NMS norm + no median fill",
-     dict(do_interp=True, do_denoise="smooth_baseline", do_median_fill=False, do_nms_normalize=True)),
-
-    ("MATLAB-MATCH + no interp (NaN-aware DoG)",
-     dict(do_interp=False, do_denoise="smooth_baseline", do_median_fill=False, do_nms_normalize=True)),
-
-    ("smooth_baseline + NMS norm + interp + median fill",
-     dict(do_interp=True, do_denoise="smooth_baseline", do_median_fill=True, do_nms_normalize=True)),
-
-    ("smooth_baseline only (keep interp, median fill, no NMS norm)",
-     dict(do_interp=True, do_denoise="smooth_baseline", do_median_fill=True, do_nms_normalize=False)),
-
-    ("NMS norm only (keep interp, denoise, median fill)",
-     dict(do_interp=True, do_denoise=True, do_median_fill=True, do_nms_normalize=True)),
-
-    ("PROPOSED: smooth_baseline + interp + median fill (no NMS norm)",
-     dict(do_interp=True, do_denoise="smooth_baseline", do_median_fill=True, do_nms_normalize=False)),
-
-    ("smooth_baseline_sqrt + NMS norm + interp + median fill",
-     dict(do_interp=True, do_denoise="smooth_baseline_sqrt", do_median_fill=True, do_nms_normalize=True)),
-
-    ("smooth_baseline_noscale + NMS norm + interp + median fill",
-     dict(do_interp=True, do_denoise="smooth_baseline_noscale", do_median_fill=True, do_nms_normalize=True)),
+    (
+        "CURRENT (baseline)",
+        {
+            "do_interp": True,
+            "do_denoise": True,
+            "do_median_fill": True,
+            "do_nms_normalize": False,
+        },
+    ),
+    (
+        "STASH (all changes)",
+        {
+            "do_interp": False,
+            "do_denoise": False,
+            "do_median_fill": False,
+            "do_nms_normalize": False,
+        },
+    ),
+    (
+        "Change 1 only: remove interpolation",
+        {
+            "do_interp": False,
+            "do_denoise": True,
+            "do_median_fill": True,
+            "do_nms_normalize": False,
+        },
+    ),
+    (
+        "Change 2 only: remove denoise",
+        {
+            "do_interp": True,
+            "do_denoise": False,
+            "do_median_fill": True,
+            "do_nms_normalize": False,
+        },
+    ),
+    (
+        "Change 3 only: add NMS normalization",
+        {
+            "do_interp": True,
+            "do_denoise": True,
+            "do_median_fill": True,
+            "do_nms_normalize": True,
+        },
+    ),
+    (
+        "Change 4 only: remove median fill",
+        {
+            "do_interp": True,
+            "do_denoise": True,
+            "do_median_fill": False,
+            "do_nms_normalize": False,
+        },
+    ),
+    (
+        "Changes 1+2: remove interp + denoise",
+        {
+            "do_interp": False,
+            "do_denoise": False,
+            "do_median_fill": True,
+            "do_nms_normalize": False,
+        },
+    ),
+    (
+        "Changes 1+2+4: remove interp + denoise + median fill (full stash minus NMS)",
+        {
+            "do_interp": False,
+            "do_denoise": False,
+            "do_median_fill": False,
+            "do_nms_normalize": False,
+        },
+    ),
+    (
+        "MATLAB-MATCH: interp + smooth_baseline + NMS norm + no median fill",
+        {
+            "do_interp": True,
+            "do_denoise": "smooth_baseline",
+            "do_median_fill": False,
+            "do_nms_normalize": True,
+        },
+    ),
+    (
+        "MATLAB-MATCH + no interp (NaN-aware DoG)",
+        {
+            "do_interp": False,
+            "do_denoise": "smooth_baseline",
+            "do_median_fill": False,
+            "do_nms_normalize": True,
+        },
+    ),
+    (
+        "smooth_baseline + NMS norm + interp + median fill",
+        {
+            "do_interp": True,
+            "do_denoise": "smooth_baseline",
+            "do_median_fill": True,
+            "do_nms_normalize": True,
+        },
+    ),
+    (
+        "smooth_baseline only (keep interp, median fill, no NMS norm)",
+        {
+            "do_interp": True,
+            "do_denoise": "smooth_baseline",
+            "do_median_fill": True,
+            "do_nms_normalize": False,
+        },
+    ),
+    (
+        "NMS norm only (keep interp, denoise, median fill)",
+        {
+            "do_interp": True,
+            "do_denoise": True,
+            "do_median_fill": True,
+            "do_nms_normalize": True,
+        },
+    ),
+    (
+        "PROPOSED: smooth_baseline + interp + median fill (no NMS norm)",
+        {
+            "do_interp": True,
+            "do_denoise": "smooth_baseline",
+            "do_median_fill": True,
+            "do_nms_normalize": False,
+        },
+    ),
+    (
+        "smooth_baseline_sqrt + NMS norm + interp + median fill",
+        {
+            "do_interp": True,
+            "do_denoise": "smooth_baseline_sqrt",
+            "do_median_fill": True,
+            "do_nms_normalize": True,
+        },
+    ),
+    (
+        "smooth_baseline_noscale + NMS norm + interp + median fill",
+        {
+            "do_interp": True,
+            "do_denoise": "smooth_baseline_noscale",
+            "do_median_fill": True,
+            "do_nms_normalize": True,
+        },
+    ),
 ]
 
 print("\n" + "=" * 80)
@@ -277,7 +393,9 @@ for label, kwargs in variants:
     t0 = time.perf_counter()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        rows, cols, vals = run_localize(movie_act, ext_config, align_hz, label=label, **kwargs)
+        rows, cols, vals = run_localize(
+            movie_act, ext_config, align_hz, label=label, **kwargs
+        )
     elapsed = time.perf_counter() - t0
 
     n_peaks = len(rows)

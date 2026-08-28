@@ -1,9 +1,9 @@
 %% Step-by-step localizeSources_vIM with intermediate saves
 % Runs each processing step and saves the result for Python comparison.
 
-dir_matlab = getenv('SPINE_MATLAB_REPO');
+dir_matlab = getenv('SUBCELL_MATLAB_REPO');
 if isempty(dir_matlab)
-    error('SPINE_MATLAB_REPO is not set. Point it at the ophys-slap2-analysis matlab directory.');
+    error('SUBCELL_MATLAB_REPO is not set. Point it at the ophys-slap2-analysis matlab directory.');
 end
 addpath(genpath(dir_matlab));
 
