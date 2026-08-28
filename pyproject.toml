@@ -1,0 +1,50 @@
+[project]
+name = "spine-extraction"
+version = "0.1.0"
+description = "Synaptic signal extraction from two-photon Bergamo imaging data"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "numpy>=1.24",
+    "torch>=2.0",
+    "scipy>=1.10",
+    "tifffile>=2023.1",
+    "zarr>=2.14",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "click>=8.0",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+viewer = [
+    "panel>=1.3",
+    "bokeh>=3.3",
+    "h5py>=3.8",
+]
+examples = [
+    "matplotlib>=3.5",
+    "jupyter",
+    "panel>=1.3",
+    "bokeh>=3.3",
+    "h5py>=3.8",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "ruff",
+]
+
+[project.scripts]
+spine-extract = "spine_extraction.cli:cli"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

@@ -1,0 +1,42 @@
+# Full pipeline configuration template.
+# Copy this file, fill in data_directory, and adjust parameters as needed.
+
+data_directory: ""       # REQUIRED: path to directory containing .tif files
+output_directory: null   # null = data_directory/spine_extraction_output
+device: auto             # 'cpu', 'cuda', or 'auto'
+log_level: INFO
+
+registration:
+  maxshift: 50
+  clip_shift: 10
+  n_workers: 4
+  remove_lines: 4
+  ds_time: 3
+  frame_rate: 0.0
+  overwrite_existing: false
+  save_full_resolution: false
+  init_frames: 1000
+  min_cluster_size: 100
+  template_min_count: 100
+
+extraction:
+  microscope: bergamo
+  sigma_px: 1.33
+  nmf_iter: 2
+  dXY: 3
+  lambda_param: null
+  denoise_window_s: 0.2
+  baseline_window_glu_s: 4.0
+  baseline_window_ca_s: 4.0
+  activity_channel: 1
+  tau_s: 0.03
+  max_synapse_density: 0.01
+  n_parallel_workers: 12
+  motion_thresh: 2.5
+  nan_thresh: 0.33
+  discard_initial_s: 0.0
+  block_size: 600
+  sel_radius_factor: 2.0
+  analyze_hz: 0.0
+  cross_trial_maxshift: 5
+  valid_trial_corr_min: 0.90

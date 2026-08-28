@@ -1,0 +1,14 @@
+# Default registration parameters for Bergamo two-photon microscope.
+# Ports setParams('stripRegBergamo') from MATLAB.
+
+maxshift: 50
+clip_shift: 10
+n_workers: 4
+remove_lines: 4
+ds_time: 3
+frame_rate: 0.0         # 0 = auto-detect from ScanImage metadata
+overwrite_existing: false
+save_full_resolution: false
+init_frames: 1000
+min_cluster_size: 100
+template_min_count: 100
