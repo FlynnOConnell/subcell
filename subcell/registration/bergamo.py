@@ -20,6 +20,7 @@ import torch
 from subcell._utils.parallel import compute_max_workers, estimate_file_size
 from subcell._utils.torch_helpers import get_device
 from subcell.config import RegistrationConfig
+from subcell.io.lazy_array import ArrayTrialSource
 from subcell.io.tiff_reader import (
     MmapTiffReader,
     ScanImageMetadata,
@@ -57,6 +58,7 @@ def register_bergamo(
     device: torch.device | None = None,
     raw_data: np.ndarray | None = None,
     metadata: ScanImageMetadata | None = None,
+    source: ArrayTrialSource | None = None,
 ) -> TrialTable:
     """
     Register every trial in the table, writing results into the store.
@@ -71,6 +73,10 @@ def register_bergamo(
         disk. Only valid for a single-trial table and requires ``metadata``.
     metadata : ScanImageMetadata, optional
         Pre-loaded metadata; must accompany ``raw_data``.
+    source : ArrayTrialSource, optional
+        Read trials from an mbo_utilities LazyArray rather than from TIFFs on
+        disk. Registration runs sequentially in this case: the array is not
+        picklable across a process pool, and its reads are already lazy.
 
     Returns
     -------
@@ -105,6 +111,24 @@ def register_bergamo(
         return trial_table
 
     data_dir = Path(trial_table.directory)
+
+    if source is not None:
+        logger.info("Registering %d trials from array source", len(entries))
+        index_of = {e.trial_index: i for i, e in enumerate(trial_table.entries)}
+        for entry in entries:
+            _register_single_trial(
+                data_dir,
+                entry.filename,
+                entry.trial_index,
+                config,
+                store,
+                device,
+                metadata=source.metadata,
+                frames=source.read_trial(index_of[entry.trial_index]),
+            )
+        trial_table.align_params = config.model_dump()
+        return trial_table
+
     avg_file_size = estimate_file_size(data_dir, "*.tif")
     n_workers = compute_max_workers(len(entries), avg_file_size, config.n_workers)
 
@@ -200,6 +224,7 @@ def _register_single_trial(
     device: torch.device | None = None,
     raw_data: np.ndarray | None = None,
     metadata: ScanImageMetadata | None = None,
+    frames: np.ndarray | None = None,
 ) -> None:
     """
     Register a single trial.
@@ -223,7 +248,11 @@ def _register_single_trial(
     raw_data : np.ndarray, optional
         Pre-loaded TIFF data (rows, cols, total_pages). Skips file read if provided.
     metadata : ScanImageMetadata, optional
-        Pre-loaded ScanImage metadata. Required if raw_data is provided.
+        Pre-loaded ScanImage metadata. Required if raw_data or frames is given.
+    frames : np.ndarray, optional
+        Already-deinterleaved (rows, cols, channels, frames) block, as supplied
+        by an mbo_utilities LazyArray source. Skips both the TIFF read and the
+        interleave reshape. Requires ``metadata``.
     """
     if device is None or device == "auto":
         device = get_device("auto")
@@ -240,7 +269,12 @@ def _register_single_trial(
     logger.info("Aligning trial %d: %s", trial_idx, filename)
 
     _mmap_reader = None  # keep reference alive for mmap-backed Ad
-    if raw_data is None:
+    if frames is not None:
+        if metadata is None:
+            raise ValueError("frames requires metadata")
+        logger.info("Using pre-deinterleaved frames from array source")
+        Ad = frames
+    elif raw_data is None:
         try:
             _mmap_reader = MmapTiffReader(filepath, remove_lines=config.remove_lines)
             Ad = _mmap_reader.data  # (rows, cols, channels, frames) view into mmap
