@@ -230,8 +230,12 @@ def run_extraction(
         return
     logger.info("Found %d sources", sources.n_sources)
 
+    # valid_trials indexes positions in the trial list; the store is keyed by
+    # the entry's own trial_index, which starts at 1.
     extractable = [
-        ix for ix in cross_result.valid_trials if store.has_registered_raw(ix)
+        ix
+        for ix in cross_result.valid_trials
+        if store.has_registered_raw(trial_table.entries[ix].trial_index)
     ]
     if not extractable:
         raise ValueError(
