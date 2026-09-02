@@ -204,7 +204,29 @@ class ExperimentStore:
         """
         arr = self.root[f"trials/trial_{trial_idx:03d}/registered_raw"]
         n_frames = arr.shape[2] // num_channels
-        out = np.empty((int(pixel_mask.sum()), n_frames), dtype=np.float32)
+        pixel_mask = np.asarray(pixel_mask, dtype=bool)
+        n_pixels = int(pixel_mask.sum())
+        h, w = int(arr.shape[0]), int(arr.shape[1])
+
+        # The mask is drawn on the canvas shared by every trial, which can be
+        # larger than this trial's own registered canvas (or, if extraction is
+        # re-run after registering more trials, smaller). Read the pixels the
+        # two have in common and leave the rest NaN: never observed here.
+        mh, mw = pixel_mask.shape
+        ch_, cw_ = min(h, mh), min(w, mw)
+        local_mask = np.zeros((h, w), dtype=bool)
+        local_mask[:ch_, :cw_] = pixel_mask[:ch_, :cw_]
+        rows_of = np.full(pixel_mask.shape, -1, dtype=np.int64)
+        rows_of[pixel_mask] = np.arange(n_pixels)
+        target_rows = rows_of[:ch_, :cw_][local_mask[:ch_, :cw_]]
+        if local_mask.sum() == n_pixels:
+            out = np.empty((n_pixels, n_frames), dtype=np.float32)
+        else:
+            logger.info(
+                "Trial %d canvas %dx%d vs mask %dx%d: %d of %d pixels lie outside it",
+                trial_idx, h, w, mh, mw, n_pixels - int(local_mask.sum()), n_pixels,
+            )
+            out = np.full((n_pixels, n_frames), np.nan, dtype=np.float32)
 
         for start in range(0, n_frames, block_size):
             stop = min(start + block_size, n_frames)
@@ -212,7 +234,7 @@ class ExperimentStore:
             block = block.reshape(
                 block.shape[0], block.shape[1], stop - start, num_channels
             )
-            out[:, start:stop] = block[:, :, :, channel][pixel_mask, :]
+            out[target_rows, start:stop] = block[:, :, :, channel][local_mask, :]
 
         return out
 

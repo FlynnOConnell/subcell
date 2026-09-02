@@ -35,6 +35,11 @@ examples = [
 mbo = [
     "mbo-utilities",
 ]
+vis = [
+    "fastplotlib>=0.6",
+    "imgui-bundle>=1.6",
+    "masknmf",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
@@ -54,6 +59,15 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["subcell*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# napari's pytest plugin swaps in a LogRecord factory that stringifies numpy
+# scalars, which breaks %d log formatting inside the pipeline when it is installed
+addopts = "-p no:napari"
+markers = [
+    "slow: runs the real registration and NMF on a synthetic movie",
+]
 
 [tool.ruff]
 target-version = "py310"

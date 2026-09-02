@@ -197,8 +197,8 @@ def make_template_multi_trial(
 
     logger.info(
         "Best reference trial: %d (median corr %.4f, %d aligned trials)",
-        max_ind,
-        best_R,
+        int(max_ind),
+        float(best_R),
         len(frame_inds),
     )
 

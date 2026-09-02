@@ -203,12 +203,21 @@ def run_extraction(
         logger.error("No valid trials found")
         return
 
-    h, w, n_ch = mean_images[valid_indices[0]].shape
+    # Each trial is registered onto its own canvas, whose size follows that
+    # trial's motion range. Stack them on the largest canvas, anchored at the
+    # top-left; the residual per-trial offset is what the cross-trial
+    # alignment below measures and corrects.
+    h = max(mean_images[i].shape[0] for i in valid_indices)
+    w = max(mean_images[i].shape[1] for i in valid_indices)
+    n_ch = mean_images[valid_indices[0]].shape[2]
+    if any(mean_images[i].shape[:2] != (h, w) for i in valid_indices):
+        logger.info("Trial canvases differ; padding all to %dx%d", h, w)
     mean_stack = np.full((h, w, n_ch, n_trials), np.nan, dtype=np.float32)
     act_stack = np.full((h, w, n_trials), np.nan, dtype=np.float32)
     for i in valid_indices:
-        mean_stack[:, :, :, i] = mean_images[i]
-        act_stack[:, :, i] = activity_images[i]
+        th, tw = mean_images[i].shape[:2]
+        mean_stack[:th, :tw, :, i] = mean_images[i]
+        act_stack[:th, :tw, i] = activity_images[i]
 
     logger.info("Step 2: Cross-trial alignment...")
     cross_result = align_trials_cross(mean_stack, act_stack, config, keep_trials)

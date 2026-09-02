@@ -183,3 +183,21 @@ def run(data_dir, config, device, workers):
     setup_logging(cfg.log_level)
     run_full_pipeline(cfg, device=get_device(cfg.device))
     click.echo("Full pipeline complete.")
+
+
+@cli.command()
+@click.argument("store", required=False, type=click.Path())
+@click.option("--raw", default=None, help="Unregistered movie to show beside the registered one.")
+@click.option("--labels", default=None, help="Comma-separated class names, e.g. spine,shaft,junk.")
+@click.option("--size", default="1700x950", show_default=True, help="Figure size WxH in pixels.")
+def vis(store, raw, labels, size):
+    """Open SubcellVis on a store, or empty to run the pipeline from the window."""
+    argv = [store] if store else []
+    if raw:
+        argv += ["--raw", raw]
+    if labels:
+        argv += ["--labels", labels]
+    argv += ["--size", size]
+    from subcell.visualization.subcell_vis import main
+
+    main(argv)
