@@ -2,7 +2,9 @@
 name = "subcell"
 version = "0.1.0"
 description = "Synaptic signal extraction from two-photon Bergamo imaging data"
-requires-python = ">=3.10"
+# masknmf (the viewer's imgui widgets) caps at <3.14 and mbo_utilities floors
+# at 3.12.7; the extraction/registration core alone still runs on 3.10.
+requires-python = ">=3.12.7,<3.14"
 license = {text = "MIT"}
 dependencies = [
     "numpy>=1.24",
@@ -79,3 +81,27 @@ ignore = [
     # int(round(x)) is deliberate: numpy scalars must be cast before use as indices.
     "RUF046",
 ]
+
+# uv-only (pip never sees these). masknmf is not on PyPI, and the viewer needs
+# the branch carrying masknmf.visualization.imgui's label/table/stroke widgets.
+# mbo_utilities comes from the sibling checkout: the PyPI package of that name
+# owns the same import package and pins the pre-ndwidget graphics stack.
+# pip users install these two before this package.
+[tool.uv.sources]
+masknmf = { git = "https://github.com/apasarkar/masknmf-toolbox.git", rev = "imgui-traces" }
+utilities = { path = "../utilities", editable = true }
+
+[tool.uv]
+# `uv run` and `uv sync` land on the full viewer stack with no flags.
+default-groups = ["vis", "mbo", "examples", "dev"]
+
+# Mirrors the optional-dependencies above, because uv only auto-installs
+# groups, not extras. pip users get the same set through the extras.
+[dependency-groups]
+vis = ["fastplotlib>=0.6", "imgui-bundle>=1.6", "masknmf"]
+examples = ["matplotlib>=3.5", "jupyter", "panel>=1.3", "bokeh>=3.3", "h5py>=3.8"]
+dev = ["pytest>=7.0", "pytest-cov", "ruff"]
+# mbo_utilities: readers for non-TIFF sources, and the mbo studio pipelines
+# dropdown entry point. Its distribution is named `utilities`, not the import
+# package `mbo_utilities`.
+mbo = ["utilities"]

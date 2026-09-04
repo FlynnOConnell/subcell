@@ -91,7 +91,7 @@ def init_config(output):
 
 
 @cli.command("build-trial-table")
-@click.argument("data_dir", type=click.Path(exists=True))
+@click.argument("data_dir", type=click.Path(exists=True, file_okay=False))
 @click.option(
     "--output",
     "-o",
@@ -109,7 +109,7 @@ def build_trial_table(data_dir, output):
 
 
 @cli.command()
-@click.argument("data_dir", type=click.Path(exists=True))
+@click.argument("data_dir", type=click.Path(exists=True, file_okay=False))
 @click.option(
     "--config",
     "-c",
@@ -148,7 +148,7 @@ def register(data_dir, config, trial_table, device, workers):
 
 
 @cli.command()
-@click.argument("data_dir", type=click.Path(exists=True))
+@click.argument("data_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--config", "-c", type=click.Path(exists=True), default=None)
 @click.option("--trial-table", type=click.Path(exists=True), default=None)
 @click.option("--device", type=click.Choice(["cpu", "cuda", "auto"]), default=None)
@@ -167,7 +167,7 @@ def extract(data_dir, config, trial_table, device, workers):
 
 
 @cli.command()
-@click.argument("data_dir", type=click.Path(exists=True))
+@click.argument("data_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--config", "-c", type=click.Path(exists=True), default=None)
 @click.option("--device", type=click.Choice(["cpu", "cuda", "auto"]), default=None)
 @click.option("--workers", "-j", type=int, default=None)
@@ -180,6 +180,12 @@ def run(data_dir, config, device, workers):
         registration_workers=workers,
         extraction_workers=workers,
     )
+    # RegistrationConfig defaults to standalone registration, which does not
+    # keep the full-rate movie that extraction reads. With no config file to
+    # say otherwise the full pipeline needs it, so turn it on rather than fail
+    # the check in run_full_pipeline. An explicit False in YAML still stands.
+    if config is None:
+        cfg.registration.save_full_resolution = True
     setup_logging(cfg.log_level)
     run_full_pipeline(cfg, device=get_device(cfg.device))
     click.echo("Full pipeline complete.")
